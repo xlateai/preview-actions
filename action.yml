@@ -16,5 +16,5 @@ outputs:
     description: Comma-separated configured platforms.
 
 runs:
-  using: node20
+  using: node24
   main: scripts/validate-config.mjs
