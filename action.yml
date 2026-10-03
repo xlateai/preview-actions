@@ -1,0 +1,20 @@
+name: Xlate Preview preflight
+description: Validate a native application's public Xlate Preview configuration.
+
+inputs:
+  project-path:
+    description: Repository-relative directory containing .xlate/preview.json.
+    required: false
+    default: "."
+
+outputs:
+  application-name:
+    description: Validated display name.
+  application-version:
+    description: Validated application version.
+  platforms:
+    description: Comma-separated configured platforms.
+
+runs:
+  using: node20
+  main: scripts/validate-config.mjs
