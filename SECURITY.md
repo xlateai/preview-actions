@@ -3,8 +3,9 @@
 Xlate Preview treats source compilation, signing, and artifact delivery as
 separate trust boundaries.
 
-- Public actions must not request or persist Apple, Android, Cloudflare, GitHub
-  App, or customer credentials.
+- Public compilation jobs must not receive Apple, Android, Cloudflare, GitHub
+  App, or customer credentials. Signing jobs must be isolated in an explicitly
+  selected protected environment and remove ephemeral material on completion.
 - Protected operations must use short-lived workload identity and validate the
   calling repository, immutable workflow revision, application, and artifact.
 - Workflows and actions should be pinned to full commit SHAs.

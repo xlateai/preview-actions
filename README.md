@@ -19,13 +19,30 @@ application's workflow.
 
 ## Status
 
-This is an early public foundation. The first reusable workflow performs a
-strict, secret-safe preflight of `.xlate/preview.json`. Native compilation,
-protected signing handoff, install cards, connected runners, and metered Xlate
-build infrastructure are coming next.
+This is an early public foundation. The reusable workflow performs a strict
+request preflight, compiles React Native iOS source without signing credentials,
+hands the retained archive to a separate protected signing run, and publishes
+the resulting install page through `builds.xlate.ai`.
 
-Do not depend on the workflow contract before the first tagged release. Once
-released, callers should pin the workflow and action to a full commit SHA.
+Android publication, connected runners, and metered Xlate build infrastructure
+are coming next.
+
+Callers must pin the workflow and its SDK input to full commit SHAs. The initial
+runner is intended for Xlate-authorized repositories while the CLI distribution
+is separated from private SDK source.
+
+```yaml
+jobs:
+  preview:
+    uses: xlateai/preview-actions/.github/workflows/native-preview.yml@FULL_COMMIT_SHA
+    with:
+      project-name: example
+      project-path: apps/example
+      project-adapter: react_native
+      xos-ref: FULL_XOS_COMMIT_SHA
+      command-subject: /preview(ios)
+    secrets: inherit
+```
 
 ## Preview configuration
 
@@ -52,9 +69,10 @@ Place `.xlate/preview.json` beside the native app's `package.json`:
 }
 ```
 
-The public preflight validates metadata and paths without printing the complete
-configuration. Secret-like fields are rejected. Credentials remain in the
-protected service that performs signing.
+The standalone public preflight validates metadata and paths without printing
+the complete configuration. Secret-like fields are rejected. The compile job
+never receives Apple credentials; the signing job is isolated in the caller's
+application-specific protected GitHub environment.
 
 ## Security
 
