@@ -27,9 +27,10 @@ the resulting install page through `builds.xlate.ai`.
 Android publication, connected runners, and metered Xlate build infrastructure
 are coming next.
 
-Callers must pin the workflow and its SDK input to full commit SHAs. The initial
-runner is intended for Xlate-authorized repositories while the CLI distribution
-is separated from private SDK source.
+Callers must pin the workflow, its `actions-ref` input, and its SDK input to full
+commit SHAs. Xlate-authorized workflows obtain short-lived, read-only Preview
+Core access from the Xlate source broker with GitHub OIDC; application
+repositories do not need a private-repository token.
 
 ```yaml
 jobs:
@@ -40,6 +41,7 @@ jobs:
       project-path: apps/example
       project-adapter: react_native
       xos-ref: FULL_XOS_COMMIT_SHA
+      actions-ref: FULL_COMMIT_SHA
       command-subject: /preview(ios)
     secrets: inherit
 ```

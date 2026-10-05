@@ -8,6 +8,10 @@ on:
         description: Full immutable XOS SDK commit used by the runner.
         required: true
         type: string
+      actions-ref:
+        description: Full immutable preview-actions commit used by the runner.
+        required: true
+        type: string
       project-adapter: { required: false, default: react_native, type: string }
       project-path: { required: false, default: ".", type: string }
       required-commands: { required: false, default: "", type: string }
@@ -25,9 +29,6 @@ on:
       preview-what-changed: { required: false, default: "", type: string }
       preview-what-to-test: { required: false, default: "", type: string }
     secrets:
-      XOS_REPO_TOKEN:
-        description: Centrally provisioned read-only access to the pinned private SDK.
-        required: true
       APP_STORE_CONNECT_API_KEY_ID: { required: false }
       APP_STORE_CONNECT_ISSUER_ID: { required: false }
       APP_STORE_CONNECT_API_KEY: { required: false }
@@ -59,6 +60,7 @@ jobs:
           COMMAND: ${{ inputs.command-subject }}
           PROJECT_PATH: ${{ inputs.project-path }}
           SDK_REF: ${{ inputs.xos-ref }}
+          ACTIONS_REF: ${{ inputs.actions-ref }}
           BUILD_HOST: ${{ inputs.build-host }}
           SIGNING_BUILD_ID: ${{ inputs.signing-build-id }}
           SIGNING_PLATFORM: ${{ inputs.signing-platform }}
@@ -70,6 +72,7 @@ jobs:
           set -euo pipefail
           [[ "$ADAPTER" == react_native ]] || { echo '::error::Only react_native is supported'; exit 1; }
           [[ "$SDK_REF" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::xos-ref must be a full commit SHA'; exit 1; }
+          [[ "$ACTIONS_REF" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::actions-ref must be a full commit SHA'; exit 1; }
           [[ "$PROJECT_PATH" != /* && "$PROJECT_PATH" != *..* ]] || { echo '::error::project-path must stay inside the repository'; exit 1; }
           [[ "$BUILD_HOST" == https://builds.xlate.ai ]] || { echo '::error::build-host is not approved'; exit 1; }
           case "$COMMAND" in
@@ -108,25 +111,22 @@ jobs:
     defaults:
       run: { shell: bash }
     steps:
-      - name: Check out pinned private SDK
+      - name: Check out pinned public runner
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: xlateai/xos
-          ref: ${{ inputs.xos-ref }}
-          token: ${{ secrets.XOS_REPO_TOKEN }}
-          path: .xos-sdk
+          repository: xlateai/preview-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .xlate-preview-actions
           persist-credentials: false
 
-      - name: Validate SDK checkout
-        env: { SDK_REF: "${{ inputs.xos-ref }}" }
+      - name: Validate runner checkout
+        env: { ACTIONS_REF: "${{ inputs.actions-ref }}" }
         run: |
-          test "$(git -C .xos-sdk rev-parse HEAD)" = "$SDK_REF"
-          test -z "$(git -C .xos-sdk status --porcelain)"
+          test "$(git -C .xlate-preview-actions rev-parse HEAD)" = "$ACTIONS_REF"
+          test -z "$(git -C .xlate-preview-actions status --porcelain)"
 
       - name: Set up pinned Xlate Preview CLI
-        uses: ./.xos-sdk/.github/actions/setup-preview-signer
-        with:
-          xos_repo_token: ${{ secrets.XOS_REPO_TOKEN }}
+        uses: ./.xlate-preview-actions/.github/actions/setup-preview-cli
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with: { node-version: 22 }
@@ -227,27 +227,25 @@ jobs:
       IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
       XOS_PREVIEW_APPLICATION_IDENTIFIER: ${{ inputs.signing-application-identifier }}
     steps:
-      - name: Check out pinned private SDK
+      - name: Check out pinned public runner
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: xlateai/xos
-          ref: ${{ inputs.xos-ref }}
-          token: ${{ secrets.XOS_REPO_TOKEN }}
-          path: .xos-sdk
+          repository: xlateai/preview-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .xlate-preview-actions
           persist-credentials: false
 
-      - name: Validate SDK checkout
-        env: { SDK_REF: "${{ inputs.xos-ref }}" }
+      - name: Validate runner checkout
+        env: { ACTIONS_REF: "${{ inputs.actions-ref }}" }
         run: |
-          test "$(git -C .xos-sdk rev-parse HEAD)" = "$SDK_REF"
-          test -z "$(git -C .xos-sdk status --porcelain)"
+          test "$(git -C .xlate-preview-actions rev-parse HEAD)" = "$ACTIONS_REF"
+          test -z "$(git -C .xlate-preview-actions status --porcelain)"
 
       - name: Set up pinned Xlate Preview CLI
-        uses: ./.xos-sdk/.github/actions/setup-preview-signer
-        with: { xos_repo_token: "${{ secrets.XOS_REPO_TOKEN }}" }
+        uses: ./.xlate-preview-actions/.github/actions/setup-preview-cli
 
       - name: Resolve the application's Apple team
-        run: python3 .xos-sdk/.github/scripts/resolve-preview-apple-team.py
+        run: python3 .xlate-preview-actions/scripts/resolve-preview-apple-team.py
 
       - name: Configure ephemeral iOS signing
         env:

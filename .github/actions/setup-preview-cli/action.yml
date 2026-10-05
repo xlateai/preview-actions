@@ -1,0 +1,50 @@
+name: Set up pinned Xlate preview CLI
+description: Fetch and build the private Preview Core through Xlate's OIDC source broker.
+
+runs:
+  using: composite
+  steps:
+    - name: Restore pinned Xlate CLI
+      id: cli-cache
+      uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      with:
+        path: ${{ runner.temp }}/xlate-preview-cli/b836c363d32d5e6c88a843db3ba1276a836923f9
+        key: xlate-preview-cli-v1-${{ runner.os }}-${{ runner.arch }}-b836c363d32d5e6c88a843db3ba1276a836923f9
+
+    - name: Fetch pinned Preview Core
+      if: steps.cli-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        bash "${{ github.action_path }}/../../../scripts/fetch-preview-core.sh" \
+          b836c363d32d5e6c88a843db3ba1276a836923f9 \
+          "$RUNNER_TEMP/devlate-preview-cli"
+
+    - name: Build pinned Xlate CLI
+      if: steps.cli-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        cli_dir="$RUNNER_TEMP/xlate-preview-cli/b836c363d32d5e6c88a843db3ba1276a836923f9"
+        CARGO_TARGET_DIR="$RUNNER_TEMP/xlate-preview-target" \
+          cargo build --locked --offline --release \
+            --manifest-path "$RUNNER_TEMP/devlate-preview-cli/crates/xlate-preview-cli/Cargo.toml"
+        mkdir -p "$cli_dir"
+        cp "$RUNNER_TEMP/xlate-preview-target/release/xlate" "$cli_dir/xlate"
+        chmod 755 "$cli_dir/xlate"
+
+    - name: Save pinned Xlate CLI
+      if: steps.cli-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      with:
+        path: ${{ runner.temp }}/xlate-preview-cli/b836c363d32d5e6c88a843db3ba1276a836923f9
+        key: xlate-preview-cli-v1-${{ runner.os }}-${{ runner.arch }}-b836c363d32d5e6c88a843db3ba1276a836923f9
+
+    - name: Expose pinned Xlate CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        cli_dir="$RUNNER_TEMP/xlate-preview-cli/b836c363d32d5e6c88a843db3ba1276a836923f9"
+        test -x "$cli_dir/xlate"
+        "$cli_dir/xlate" --version
+        echo "$cli_dir" >> "$GITHUB_PATH"
