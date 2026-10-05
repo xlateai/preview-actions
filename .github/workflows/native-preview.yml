@@ -14,6 +14,8 @@ on:
         type: string
       project-adapter: { required: false, default: react_native, type: string }
       application-identifier: { required: false, default: "", type: string }
+      app-store-connect-api-key-id: { required: false, default: "", type: string }
+      apple-team-id: { required: false, default: "", type: string }
       project-path: { required: false, default: ".", type: string }
       required-commands: { required: false, default: "", type: string }
       command-subject: { required: false, default: "", type: string }
@@ -64,6 +66,8 @@ jobs:
         env:
           ADAPTER: ${{ inputs.project-adapter }}
           APPLICATION_IDENTIFIER: ${{ inputs.application-identifier }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.app-store-connect-api-key-id }}
+          APPLE_TEAM_ID: ${{ inputs.apple-team-id }}
           COMMAND: ${{ inputs.command-subject }}
           PROJECT_PATH: ${{ inputs.project-path }}
           SDK_REF: ${{ inputs.xos-ref }}
@@ -103,6 +107,8 @@ jobs:
           fi
           if [[ "$COMMAND" == /preview || "$COMMAND" == '/preview(ios)' ]]; then
             [[ "$BUILD_SIGNING_ENVIRONMENT" =~ ^xos-preview-[A-Za-z0-9_-]{8,120}$ ]] || { echo '::error::An approved build-signing-environment is required for iOS'; exit 1; }
+            [[ "$APP_STORE_CONNECT_API_KEY_ID" =~ ^[A-Z0-9]{10}$ ]] || { echo '::error::App Store Connect key ID is invalid'; exit 1; }
+            [[ "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || { echo '::error::Apple team ID is invalid'; exit 1; }
             echo 'run-ios=true' >> "$GITHUB_OUTPUT"
           else
             echo 'run-ios=false' >> "$GITHUB_OUTPUT"
@@ -174,13 +180,13 @@ jobs:
 
       - name: Configure ephemeral iOS signing
         env:
-          APP_STORE_CONNECT_API_KEY_ID: ${{ vars.APP_STORE_CONNECT_API_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.app-store-connect-api-key-id }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
-          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
+          APPLE_TEAM_ID: ${{ inputs.apple-team-id }}
           IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
           IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
-          ASC_KEY_PATH: ${{ runner.temp }}/AuthKey_${{ vars.APP_STORE_CONNECT_API_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
+          ASC_KEY_PATH: ${{ runner.temp }}/AuthKey_${{ inputs.app-store-connect-api-key-id }}.p8
           P12_PATH: ${{ runner.temp }}/xlate-preview-distribution.p12
           KEYCHAIN_PATH: ${{ runner.temp }}/xlate-preview.keychain-db
         run: |
@@ -212,9 +218,9 @@ jobs:
 
       - name: Compile, sign, and publish iOS build
         env:
-          APP_STORE_CONNECT_API_KEY_ID: ${{ vars.APP_STORE_CONNECT_API_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.app-store-connect-api-key-id }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
+          APPLE_TEAM_ID: ${{ inputs.apple-team-id }}
           GH_TOKEN: ${{ github.token }}
           PROJECT_PATH: ${{ inputs.project-path }}
           BUILD_HOST: ${{ inputs.build-host }}
