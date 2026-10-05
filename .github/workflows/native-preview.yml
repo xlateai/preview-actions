@@ -24,6 +24,11 @@ on:
       reissue-source-sha: { required: false, default: "", type: string }
       signing-application-identifier: { required: false, default: "", type: string }
       signing-environment: { required: false, default: "", type: string }
+      build-signing-environment:
+        description: Protected GitHub environment used to sign an initial iOS preview.
+        required: false
+        default: ""
+        type: string
       build-host: { required: false, default: https://builds.xlate.ai, type: string }
       preview-title: { required: false, default: "", type: string }
       preview-what-changed: { required: false, default: "", type: string }
@@ -66,6 +71,7 @@ jobs:
           SIGNING_PLATFORM: ${{ inputs.signing-platform }}
           SIGNING_IDENTIFIER: ${{ inputs.signing-application-identifier }}
           SIGNING_ENVIRONMENT: ${{ inputs.signing-environment }}
+          BUILD_SIGNING_ENVIRONMENT: ${{ inputs.build-signing-environment }}
           PREPARATION_ID: ${{ inputs.device-preparation-id }}
           REISSUE_SOURCE_SHA: ${{ inputs.reissue-source-sha }}
         run: |
@@ -93,6 +99,7 @@ jobs:
             [[ "$REISSUE_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::reissue source must be an exact commit'; exit 1; }
           fi
           if [[ "$COMMAND" == /preview || "$COMMAND" == '/preview(ios)' ]]; then
+            [[ "$BUILD_SIGNING_ENVIRONMENT" =~ ^xos-preview-[A-Za-z0-9_-]{8,120}$ ]] || { echo '::error::An approved build-signing-environment is required for iOS'; exit 1; }
             echo 'run-ios=true' >> "$GITHUB_OUTPUT"
           else
             echo 'run-ios=false' >> "$GITHUB_OUTPUT"
@@ -108,8 +115,16 @@ jobs:
       pull-requests: write
       id-token: write
     runs-on: macos-26
+    environment: ${{ inputs.build-signing-environment }}
     defaults:
       run: { shell: bash }
+    env:
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
+      IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
     steps:
       - name: Check out pinned public runner
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -142,7 +157,7 @@ jobs:
         env: { PROJECT_PATH: "${{ inputs.project-path }}" }
         run: xlate preview prepare ".xlate-project/$PROJECT_PATH"
 
-      - name: Compile and hand off unsigned iOS build
+      - name: Compile, sign, and publish iOS build
         env:
           GH_TOKEN: ${{ github.token }}
           PROJECT_PATH: ${{ inputs.project-path }}
@@ -153,10 +168,11 @@ jobs:
           XOS_PREVIEW_PR: ${{ inputs.pull-request-number }}
           XOS_PREVIEW_BUILD_NUMBER: ${{ github.run_number }}
           XOS_PREVIEW_IDEMPOTENCY_KEY: github:${{ github.repository_id }}:${{ inputs.preview-request-id || github.run_id }}:${{ github.run_attempt }}
+          XOS_BROKERED_GITHUB_PUBLISHER: "1"
         run: |
           set -euo pipefail
           output="$RUNNER_TEMP/xlate-preview-result-ios.json"
-          xlate preview ".xlate-project/$PROJECT_PATH" --ios --github-signing \
+          xlate preview ".xlate-project/$PROJECT_PATH" --ios --local \
             --host "$BUILD_HOST" --title "$XOS_PREVIEW_TITLE" \
             --changed "$XOS_PREVIEW_WHAT_CHANGED" --test "$XOS_PREVIEW_WHAT_TO_TEST" --json \
             | tee "$RUNNER_TEMP/build.ndjson"
