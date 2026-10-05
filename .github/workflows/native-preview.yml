@@ -13,6 +13,7 @@ on:
         required: true
         type: string
       project-adapter: { required: false, default: react_native, type: string }
+      application-identifier: { required: false, default: "", type: string }
       project-path: { required: false, default: ".", type: string }
       required-commands: { required: false, default: "", type: string }
       command-subject: { required: false, default: "", type: string }
@@ -62,6 +63,7 @@ jobs:
         shell: bash
         env:
           ADAPTER: ${{ inputs.project-adapter }}
+          APPLICATION_IDENTIFIER: ${{ inputs.application-identifier }}
           COMMAND: ${{ inputs.command-subject }}
           PROJECT_PATH: ${{ inputs.project-path }}
           SDK_REF: ${{ inputs.xos-ref }}
@@ -77,6 +79,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$ADAPTER" == react_native ]] || { echo '::error::Only react_native is supported'; exit 1; }
+          [[ "$APPLICATION_IDENTIFIER" =~ ^[A-Za-z0-9-]+([.][A-Za-z0-9-]+)+$ ]] || { echo '::error::application-identifier is invalid'; exit 1; }
           [[ "$SDK_REF" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::xos-ref must be a full commit SHA'; exit 1; }
           [[ "$ACTIONS_REF" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::actions-ref must be a full commit SHA'; exit 1; }
           [[ "$PROJECT_PATH" != /* && "$PROJECT_PATH" != *..* ]] || { echo '::error::project-path must stay inside the repository'; exit 1; }
@@ -119,12 +122,13 @@ jobs:
     defaults:
       run: { shell: bash }
     env:
-      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_KEY_ID: ${{ vars.APP_STORE_CONNECT_API_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
       APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
       IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
       IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+      XOS_PREVIEW_APPLICATION_IDENTIFIER: ${{ inputs.application-identifier }}
     steps:
       - name: Check out pinned public runner
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -156,6 +160,41 @@ jobs:
       - name: Install locked project dependencies
         env: { PROJECT_PATH: "${{ inputs.project-path }}" }
         run: xlate preview prepare ".xlate-project/$PROJECT_PATH"
+
+      - name: Resolve the application's Apple team
+        run: python3 .xlate-preview-actions/scripts/resolve-preview-apple-team.py
+
+      - name: Configure ephemeral iOS signing
+        env:
+          ASC_KEY_PATH: ${{ runner.temp }}/AuthKey_${{ vars.APP_STORE_CONNECT_API_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
+          P12_PATH: ${{ runner.temp }}/xlate-preview-distribution.p12
+          KEYCHAIN_PATH: ${{ runner.temp }}/xlate-preview.keychain-db
+        run: |
+          set -euo pipefail
+          for name in APP_STORE_CONNECT_API_KEY_ID APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_API_KEY APPLE_TEAM_ID; do
+            [[ -n "${!name:-}" ]] || { echo "::error::$name is required for iOS previews"; exit 1; }
+          done
+          [[ "$XOS_PREVIEW_EXPECTED_APPLE_TEAM_ID" == "$APPLE_TEAM_ID" ]] || {
+            echo '::error::Configured Apple team does not match the control-plane binding'
+            exit 1
+          }
+          printf '%s' "$APP_STORE_CONNECT_API_KEY" | sed 's/\\n/\n/g' > "$ASC_KEY_PATH"
+          chmod 600 "$ASC_KEY_PATH"
+          if [[ -n "${IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64:-}" ]]; then
+            [[ -n "${IOS_DISTRIBUTION_CERTIFICATE_PASSWORD:-}" ]]
+            printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64" | base64 --decode > "$P12_PATH"
+            keychain_password="$(openssl rand -hex 24)"
+            security create-keychain -p "$keychain_password" "$KEYCHAIN_PATH"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+            security unlock-keychain -p "$keychain_password" "$KEYCHAIN_PATH"
+            security import "$P12_PATH" -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$KEYCHAIN_PATH" >/dev/null
+            security list-keychains -d user -s "$KEYCHAIN_PATH"
+          elif [[ -n "${IOS_DISTRIBUTION_CERTIFICATE_PASSWORD:-}" ]]; then
+            echo '::error::Certificate password was configured without a certificate'
+            exit 1
+          fi
+          echo "ASC_PRIVATE_KEY_PATH=$ASC_KEY_PATH" >> "$GITHUB_ENV"
 
       - name: Compile, sign, and publish iOS build
         env:
@@ -203,6 +242,13 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      - name: Remove ephemeral signing material
+        if: always()
+        env: { KEYCHAIN_PATH: "${{ runner.temp }}/xlate-preview.keychain-db" }
+        run: |
+          if [[ -f "$KEYCHAIN_PATH" ]]; then security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true; fi
+          rm -f "$RUNNER_TEMP"/AuthKey_*.p8 "$RUNNER_TEMP/xlate-preview-distribution.p12"
+
       - name: Share preview on its pull request
         if: inputs.pull-request-number != ''
         env:
@@ -235,10 +281,10 @@ jobs:
     defaults:
       run: { shell: bash }
     env:
-      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_KEY_ID: ${{ vars.APP_STORE_CONNECT_API_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}
       APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
       APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
       IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
       IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
       XOS_PREVIEW_APPLICATION_IDENTIFIER: ${{ inputs.signing-application-identifier }}
@@ -265,7 +311,7 @@ jobs:
 
       - name: Configure ephemeral iOS signing
         env:
-          ASC_KEY_PATH: ${{ runner.temp }}/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
+          ASC_KEY_PATH: ${{ runner.temp }}/AuthKey_${{ vars.APP_STORE_CONNECT_API_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
           P12_PATH: ${{ runner.temp }}/xlate-preview-distribution.p12
           KEYCHAIN_PATH: ${{ runner.temp }}/xlate-preview.keychain-db
         run: |
