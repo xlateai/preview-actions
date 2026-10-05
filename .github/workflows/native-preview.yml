@@ -1,0 +1,65 @@
+name: Native preview preflight
+
+on:
+  workflow_call:
+    inputs:
+      project-path:
+        description: Repository-relative native application directory.
+        required: false
+        default: "."
+        type: string
+      actions-ref:
+        description: Full preview-actions commit SHA; normally the same SHA used by the caller.
+        required: true
+        type: string
+    outputs:
+      application-name:
+        description: Validated application display name.
+        value: ${{ jobs.preflight.outputs.application-name }}
+      application-version:
+        description: Validated application version.
+        value: ${{ jobs.preflight.outputs.application-version }}
+      platforms:
+        description: Comma-separated configured platforms.
+        value: ${{ jobs.preflight.outputs.platforms }}
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      application-name: ${{ steps.validate.outputs.application-name }}
+      application-version: ${{ steps.validate.outputs.application-version }}
+      platforms: ${{ steps.validate.outputs.platforms }}
+    steps:
+      - name: Validate immutable actions revision
+        env:
+          ACTIONS_REF: ${{ inputs.actions-ref }}
+        shell: bash
+        run: |
+          if [[ ! "$ACTIONS_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::actions-ref must be a full 40-character commit SHA'
+            exit 1
+          fi
+
+      - name: Check out application source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out pinned preview action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: xlateai/preview-actions
+          ref: ${{ inputs.actions-ref }}
+          path: .xlate-preview-actions
+          persist-credentials: false
+
+      - name: Validate preview configuration
+        id: validate
+        env:
+          INPUT_PROJECT_PATH: ${{ inputs.project-path }}
+        shell: bash
+        run: node .xlate-preview-actions/scripts/validate-config.mjs "--project-path=$INPUT_PROJECT_PATH"

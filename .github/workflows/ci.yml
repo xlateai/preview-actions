@@ -1,0 +1,25 @@
+name: Public boundary checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: node --test test/*.test.mjs
+      - name: Reject sensitive tracked files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -E '(^|/)(\.env($|\.)|.*\.(p8|p12|pem|key|mobileprovision|jks|keystore)$)'; then
+            echo '::error::A sensitive file type is tracked'
+            exit 1
+          fi
