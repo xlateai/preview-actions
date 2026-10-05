@@ -1,65 +1,328 @@
-name: Native preview preflight
+name: React Native preview
 
 on:
   workflow_call:
     inputs:
-      project-path:
-        description: Repository-relative native application directory.
-        required: false
-        default: "."
-        type: string
-      actions-ref:
-        description: Full preview-actions commit SHA; normally the same SHA used by the caller.
+      project-name: { required: true, type: string }
+      xos-ref:
+        description: Full immutable XOS SDK commit used by the runner.
         required: true
         type: string
-    outputs:
-      application-name:
-        description: Validated application display name.
-        value: ${{ jobs.preflight.outputs.application-name }}
-      application-version:
-        description: Validated application version.
-        value: ${{ jobs.preflight.outputs.application-version }}
-      platforms:
-        description: Comma-separated configured platforms.
-        value: ${{ jobs.preflight.outputs.platforms }}
+      project-adapter: { required: false, default: react_native, type: string }
+      project-path: { required: false, default: ".", type: string }
+      required-commands: { required: false, default: "", type: string }
+      command-subject: { required: false, default: "", type: string }
+      pull-request-number: { required: false, default: "", type: string }
+      preview-request-id: { required: false, default: "", type: string }
+      signing-build-id: { required: false, default: "", type: string }
+      signing-platform: { required: false, default: "", type: string }
+      device-preparation-id: { required: false, default: "", type: string }
+      reissue-source-sha: { required: false, default: "", type: string }
+      signing-application-identifier: { required: false, default: "", type: string }
+      signing-environment: { required: false, default: "", type: string }
+      build-host: { required: false, default: https://builds.xlate.ai, type: string }
+      preview-title: { required: false, default: "", type: string }
+      preview-what-changed: { required: false, default: "", type: string }
+      preview-what-to-test: { required: false, default: "", type: string }
+    secrets:
+      XOS_REPO_TOKEN:
+        description: Centrally provisioned read-only access to the pinned private SDK.
+        required: true
+      APP_STORE_CONNECT_API_KEY_ID: { required: false }
+      APP_STORE_CONNECT_ISSUER_ID: { required: false }
+      APP_STORE_CONNECT_API_KEY: { required: false }
+      APPLE_TEAM_ID: { required: false }
+      IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64: { required: false }
+      IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: { required: false }
 
 permissions:
   contents: read
+  pull-requests: write
+  id-token: write
+
+env:
+  XOS_CLOUD_API_URL: ${{ vars.XOS_CLOUD_API_URL || 'https://xlate.ai' }}
+  ASC_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
 
 jobs:
-  preflight:
+  request:
     runs-on: ubuntu-latest
     outputs:
-      application-name: ${{ steps.validate.outputs.application-name }}
-      application-version: ${{ steps.validate.outputs.application-version }}
-      platforms: ${{ steps.validate.outputs.platforms }}
+      run-ios: ${{ steps.validate.outputs.run-ios }}
     steps:
-      - name: Validate immutable actions revision
-        env:
-          ACTIONS_REF: ${{ inputs.actions-ref }}
+      - name: Validate immutable preview request
+        id: validate
         shell: bash
+        env:
+          ADAPTER: ${{ inputs.project-adapter }}
+          COMMAND: ${{ inputs.command-subject }}
+          PROJECT_PATH: ${{ inputs.project-path }}
+          SDK_REF: ${{ inputs.xos-ref }}
+          BUILD_HOST: ${{ inputs.build-host }}
+          SIGNING_BUILD_ID: ${{ inputs.signing-build-id }}
+          SIGNING_PLATFORM: ${{ inputs.signing-platform }}
+          SIGNING_IDENTIFIER: ${{ inputs.signing-application-identifier }}
+          SIGNING_ENVIRONMENT: ${{ inputs.signing-environment }}
+          PREPARATION_ID: ${{ inputs.device-preparation-id }}
+          REISSUE_SOURCE_SHA: ${{ inputs.reissue-source-sha }}
         run: |
-          if [[ ! "$ACTIONS_REF" =~ ^[0-9a-f]{40}$ ]]; then
-            echo '::error::actions-ref must be a full 40-character commit SHA'
+          set -euo pipefail
+          [[ "$ADAPTER" == react_native ]] || { echo '::error::Only react_native is supported'; exit 1; }
+          [[ "$SDK_REF" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::xos-ref must be a full commit SHA'; exit 1; }
+          [[ "$PROJECT_PATH" != /* && "$PROJECT_PATH" != *..* ]] || { echo '::error::project-path must stay inside the repository'; exit 1; }
+          [[ "$BUILD_HOST" == https://builds.xlate.ai ]] || { echo '::error::build-host is not approved'; exit 1; }
+          case "$COMMAND" in
+            ''|'/preview'|'/preview(ios)'|'/preview(android)') ;;
+            *) echo '::error::command-subject is not a supported exact preview command'; exit 1 ;;
+          esac
+          if [[ -n "$SIGNING_BUILD_ID" ]]; then
+            [[ "$SIGNING_BUILD_ID" =~ ^build_[A-Za-z0-9_-]{16,120}$ ]] || { echo '::error::signing-build-id is invalid'; exit 1; }
+            [[ "$SIGNING_PLATFORM" == ios ]] || { echo '::error::This release supports iOS signing only'; exit 1; }
+            [[ "$SIGNING_IDENTIFIER" =~ ^[A-Za-z0-9_]+([.][A-Za-z0-9_]+)+$ ]] || { echo '::error::signing application identity is invalid'; exit 1; }
+            [[ "$SIGNING_ENVIRONMENT" =~ ^xos-preview-[A-Za-z0-9_-]{8,120}$ ]] || { echo '::error::signing environment is invalid'; exit 1; }
+          elif [[ -n "$SIGNING_PLATFORM$SIGNING_IDENTIFIER$SIGNING_ENVIRONMENT$PREPARATION_ID$REISSUE_SOURCE_SHA" ]]; then
+            echo '::error::Signing-only inputs require signing-build-id'
             exit 1
           fi
+          if [[ -n "$PREPARATION_ID" ]]; then
+            [[ "$PREPARATION_ID" =~ ^prep_[A-Za-z0-9_-]{16,120}$ ]] || { echo '::error::device preparation identity is invalid'; exit 1; }
+            [[ "$REISSUE_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::reissue source must be an exact commit'; exit 1; }
+          fi
+          if [[ "$COMMAND" == /preview || "$COMMAND" == '/preview(ios)' ]]; then
+            echo 'run-ios=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'run-ios=false' >> "$GITHUB_OUTPUT"
+          fi
+
+  react-native-build:
+    name: Compile React Native iOS preview
+    needs: request
+    if: inputs.signing-build-id == '' && needs.request.outputs.run-ios == 'true'
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: write
+      id-token: write
+    runs-on: macos-26
+    defaults:
+      run: { shell: bash }
+    steps:
+      - name: Check out pinned private SDK
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: xlateai/xos
+          ref: ${{ inputs.xos-ref }}
+          token: ${{ secrets.XOS_REPO_TOKEN }}
+          path: .xos-sdk
+          persist-credentials: false
+
+      - name: Validate SDK checkout
+        env: { SDK_REF: "${{ inputs.xos-ref }}" }
+        run: |
+          test "$(git -C .xos-sdk rev-parse HEAD)" = "$SDK_REF"
+          test -z "$(git -C .xos-sdk status --porcelain)"
+
+      - name: Set up pinned Xlate Preview CLI
+        uses: ./.xos-sdk/.github/actions/setup-preview-signer
+        with:
+          xos_repo_token: ${{ secrets.XOS_REPO_TOKEN }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version: 22 }
 
       - name: Check out application source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          path: .xlate-project
+          fetch-depth: 0
           persist-credentials: false
 
-      - name: Check out pinned preview action
+      - name: Install locked project dependencies
+        env: { PROJECT_PATH: "${{ inputs.project-path }}" }
+        run: xlate preview prepare ".xlate-project/$PROJECT_PATH"
+
+      - name: Compile and hand off unsigned iOS build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROJECT_PATH: ${{ inputs.project-path }}
+          BUILD_HOST: ${{ inputs.build-host }}
+          XOS_PREVIEW_TITLE: ${{ inputs.preview-title }}
+          XOS_PREVIEW_WHAT_CHANGED: ${{ inputs.preview-what-changed }}
+          XOS_PREVIEW_WHAT_TO_TEST: ${{ inputs.preview-what-to-test }}
+          XOS_PREVIEW_PR: ${{ inputs.pull-request-number }}
+          XOS_PREVIEW_BUILD_NUMBER: ${{ github.run_number }}
+          XOS_PREVIEW_IDEMPOTENCY_KEY: github:${{ github.repository_id }}:${{ inputs.preview-request-id || github.run_id }}:${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/xlate-preview-result-ios.json"
+          xlate preview ".xlate-project/$PROJECT_PATH" --ios --github-signing \
+            --host "$BUILD_HOST" --title "$XOS_PREVIEW_TITLE" \
+            --changed "$XOS_PREVIEW_WHAT_CHANGED" --test "$XOS_PREVIEW_WHAT_TO_TEST" --json \
+            | tee "$RUNNER_TEMP/build.ndjson"
+          tail -n 1 "$RUNNER_TEMP/build.ndjson" > "$output"
+          python3 - "$output" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding='utf-8') as handle:
+              url = json.load(handle).get('page_url', '')
+          if not url.startswith('https://builds.xlate.ai/'):
+              raise SystemExit('preview result omitted an approved builds.xlate.ai URL')
+          PY
+
+      - name: Retain unsigned input after a failed handoff
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: xlate-signing-input-${{ github.run_id }}-ios
+          include-hidden-files: true
+          path: ~/.xos/previews/*/*.xcarchive.zip
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload preview result
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: xlate-preview-result-${{ inputs.preview-request-id }}-ios
+          path: ${{ runner.temp }}/xlate-preview-result-ios.json
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Share preview on its pull request
+        if: inputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pull-request-number }}
+        run: |
+          set -euo pipefail
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["page_url"])' "$RUNNER_TEMP/xlate-preview-result-ios.json")"
+          marker='<!-- xlate-react-native-preview:ios -->'
+          body="$marker"$'\n'"React Native iOS preview for commit $GITHUB_SHA: $url"
+          payload="$RUNNER_TEMP/comment.json"
+          python3 -c 'import json,sys; json.dump({"body":sys.argv[1]},open(sys.argv[2],"w"))' "$body" "$payload"
+          comment="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -n 1)"
+          if [[ -n "$comment" ]]; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment" --input "$payload" >/dev/null
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --input "$payload" >/dev/null
+          fi
+
+  ios-sign-preview:
+    name: Sign and publish iOS preview
+    needs: request
+    if: inputs.signing-build-id != '' && inputs.signing-platform == 'ios' && needs.request.outputs.run-ios == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: macos-26
+    environment: ${{ inputs.signing-environment }}
+    defaults:
+      run: { shell: bash }
+    env:
+      APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
+      IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+      XOS_PREVIEW_APPLICATION_IDENTIFIER: ${{ inputs.signing-application-identifier }}
+    steps:
+      - name: Check out pinned private SDK
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: xlateai/preview-actions
-          ref: ${{ inputs.actions-ref }}
-          path: .xlate-preview-actions
+          repository: xlateai/xos
+          ref: ${{ inputs.xos-ref }}
+          token: ${{ secrets.XOS_REPO_TOKEN }}
+          path: .xos-sdk
           persist-credentials: false
 
-      - name: Validate preview configuration
-        id: validate
+      - name: Validate SDK checkout
+        env: { SDK_REF: "${{ inputs.xos-ref }}" }
+        run: |
+          test "$(git -C .xos-sdk rev-parse HEAD)" = "$SDK_REF"
+          test -z "$(git -C .xos-sdk status --porcelain)"
+
+      - name: Set up pinned Xlate Preview CLI
+        uses: ./.xos-sdk/.github/actions/setup-preview-signer
+        with: { xos_repo_token: "${{ secrets.XOS_REPO_TOKEN }}" }
+
+      - name: Resolve the application's Apple team
+        run: python3 .xos-sdk/.github/scripts/resolve-preview-apple-team.py
+
+      - name: Configure ephemeral iOS signing
         env:
-          INPUT_PROJECT_PATH: ${{ inputs.project-path }}
+          ASC_KEY_PATH: ${{ runner.temp }}/AuthKey_${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
+          P12_PATH: ${{ runner.temp }}/xlate-preview-distribution.p12
+          KEYCHAIN_PATH: ${{ runner.temp }}/xlate-preview.keychain-db
+        run: |
+          set -euo pipefail
+          for name in APP_STORE_CONNECT_API_KEY_ID APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_API_KEY APPLE_TEAM_ID; do
+            [[ -n "${!name:-}" ]] || { echo "::error::$name is required for iOS previews"; exit 1; }
+          done
+          [[ "$XOS_PREVIEW_EXPECTED_APPLE_TEAM_ID" == "$APPLE_TEAM_ID" ]] || {
+            echo '::error::Configured Apple team does not match the control-plane binding'
+            exit 1
+          }
+          printf '%s' "$APP_STORE_CONNECT_API_KEY" | sed 's/\\n/\n/g' > "$ASC_KEY_PATH"
+          chmod 600 "$ASC_KEY_PATH"
+          if [[ -n "${IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64:-}" ]]; then
+            [[ -n "${IOS_DISTRIBUTION_CERTIFICATE_PASSWORD:-}" ]]
+            printf '%s' "$IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64" | base64 --decode > "$P12_PATH"
+            keychain_password="$(openssl rand -hex 24)"
+            security create-keychain -p "$keychain_password" "$KEYCHAIN_PATH"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+            security unlock-keychain -p "$keychain_password" "$KEYCHAIN_PATH"
+            security import "$P12_PATH" -P "$IOS_DISTRIBUTION_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$KEYCHAIN_PATH" >/dev/null
+            security list-keychains -d user -s "$KEYCHAIN_PATH"
+          elif [[ -n "${IOS_DISTRIBUTION_CERTIFICATE_PASSWORD:-}" ]]; then
+            echo '::error::Certificate password was configured without a certificate'
+            exit 1
+          fi
+          {
+            echo "ASC_PRIVATE_KEY_PATH=$ASC_KEY_PATH"
+            echo "XOS_PREVIEW_IDEMPOTENCY_KEY=github:${{ github.repository_id }}:${{ inputs.preview-request-id || github.run_id }}:${{ github.run_attempt }}"
+            echo "XOS_PREVIEW_PR=${{ inputs.pull-request-number }}"
+          } >> "$GITHUB_ENV"
+
+      - name: Sign and publish iOS preview
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/xlate-ios-preview.ndjson"
+          if [[ -n "${{ inputs.device-preparation-id }}" ]]; then
+            xlate preview reissue ./ --build "${{ inputs.signing-build-id }}" \
+              --operation "${{ inputs.device-preparation-id }}" \
+              --host "${{ inputs.build-host }}" --json | tee "$output"
+          else
+            xlate preview sign ./ --platform ios --build "${{ inputs.signing-build-id }}" \
+              --host "${{ inputs.build-host }}" --json | tee "$output"
+          fi
+          page_url="$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).read().splitlines()[-1])["page_url"])' "$output")"
+          [[ "$page_url" == https://builds.xlate.ai/* ]]
+
+      - name: Remove ephemeral signing material
+        if: always()
+        env: { KEYCHAIN_PATH: "${{ runner.temp }}/xlate-preview.keychain-db" }
+        run: |
+          if [[ -f "$KEYCHAIN_PATH" ]]; then security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true; fi
+          rm -f "$RUNNER_TEMP"/AuthKey_*.p8 "$RUNNER_TEMP/xlate-preview-distribution.p12"
+
+  final-check:
+    name: Final check
+    if: always() && !cancelled()
+    needs: [request, react-native-build, ios-sign-preview]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require selected lane
         shell: bash
-        run: node .xlate-preview-actions/scripts/validate-config.mjs "--project-path=$INPUT_PROJECT_PATH"
+        env:
+          REQUEST_RESULT: ${{ needs.request.result }}
+          RUN_IOS: ${{ needs.request.outputs.run-ios }}
+          SIGNING_BUILD_ID: ${{ inputs.signing-build-id }}
+          BUILD_RESULT: ${{ needs.react-native-build.result }}
+          SIGN_RESULT: ${{ needs.ios-sign-preview.result }}
+        run: |
+          set -euo pipefail
+          [[ "$REQUEST_RESULT" == success ]]
+          if [[ "$RUN_IOS" == true && -z "$SIGNING_BUILD_ID" ]]; then [[ "$BUILD_RESULT" == success ]]; fi
+          if [[ "$RUN_IOS" == true && -n "$SIGNING_BUILD_ID" ]]; then [[ "$SIGN_RESULT" == success ]]; fi
