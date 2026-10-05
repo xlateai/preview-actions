@@ -38,9 +38,11 @@ echo "::add-mask::${core_token}"
 
 authorization="$(printf 'x-access-token:%s' "$core_token" | base64 | tr -d '\r\n')"
 unset core_token
-export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_COUNT=2
 export GIT_CONFIG_KEY_0='http.https://github.com/xlateai/devlate.git.extraheader'
 export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${authorization}"
+export GIT_CONFIG_KEY_1='http.https://github.com/xlateai/xos.git.extraheader'
+export GIT_CONFIG_VALUE_1="AUTHORIZATION: basic ${authorization}"
 export GIT_TERMINAL_PROMPT=0
 export CARGO_NET_GIT_FETCH_WITH_CLI=true
 revision="$1"
