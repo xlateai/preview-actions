@@ -51,4 +51,7 @@ git clone --quiet --filter=blob:none https://github.com/xlateai/devlate.git "$de
 git -C "$destination" fetch --quiet origin "$revision"
 git -C "$destination" checkout --quiet --detach "$revision"
 test "$(git -C "$destination" rev-parse HEAD)" = "$revision"
-cargo fetch --locked --manifest-path "$destination/crates/xlate-preview-cli/Cargo.toml"
+# Resolve the immutable git revisions into this throwaway checkout. The build
+# immediately below remains locked and offline, so no dependency can change
+# between fetch and compilation.
+cargo fetch --manifest-path "$destination/crates/xlate-preview-cli/Cargo.toml"
