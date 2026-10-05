@@ -122,12 +122,6 @@ jobs:
     defaults:
       run: { shell: bash }
     env:
-      APP_STORE_CONNECT_API_KEY_ID: ${{ vars.APP_STORE_CONNECT_API_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}
-      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-      APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
-      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
-      IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
-      IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
       XOS_PREVIEW_APPLICATION_IDENTIFIER: ${{ inputs.application-identifier }}
     steps:
       - name: Check out pinned public runner
@@ -159,13 +153,33 @@ jobs:
 
       - name: Install locked project dependencies
         env: { PROJECT_PATH: "${{ inputs.project-path }}" }
-        run: xlate preview prepare ".xlate-project/$PROJECT_PATH"
+        run: |
+          set -euo pipefail
+          cd ".xlate-project/$PROJECT_PATH"
+          if [[ -f package-lock.json ]]; then
+            npm ci
+          elif [[ -f pnpm-lock.yaml ]]; then
+            corepack enable
+            pnpm install --frozen-lockfile
+          elif [[ -f yarn.lock ]]; then
+            corepack enable
+            yarn install --immutable
+          else
+            echo '::error::A supported lockfile is required'
+            exit 1
+          fi
 
       - name: Resolve the application's Apple team
         run: python3 .xlate-preview-actions/scripts/resolve-preview-apple-team.py
 
       - name: Configure ephemeral iOS signing
         env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ vars.APP_STORE_CONNECT_API_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
+          IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
           ASC_KEY_PATH: ${{ runner.temp }}/AuthKey_${{ vars.APP_STORE_CONNECT_API_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
           P12_PATH: ${{ runner.temp }}/xlate-preview-distribution.p12
           KEYCHAIN_PATH: ${{ runner.temp }}/xlate-preview.keychain-db
@@ -198,6 +212,9 @@ jobs:
 
       - name: Compile, sign, and publish iOS build
         env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ vars.APP_STORE_CONNECT_API_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID }}
           GH_TOKEN: ${{ github.token }}
           PROJECT_PATH: ${{ inputs.project-path }}
           BUILD_HOST: ${{ inputs.build-host }}
