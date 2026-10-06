@@ -20,3 +20,10 @@ test('android-only requests do not require Apple signing inputs', () => {
   assert.match(workflow.slice(appleValidation, androidValidation), /APP_STORE_CONNECT_API_KEY_ID/)
   assert.doesNotMatch(workflow.slice(androidValidation, workflow.indexOf('react-native-build:', androidValidation)), /APP_STORE_CONNECT_API_KEY_ID/)
 })
+
+test('android previews use connected signing or a bounded ephemeral fallback', () => {
+  assert.match(workflow, /ANDROID_KEYSTORE_BASE64/)
+  assert.match(workflow, /Android signing secrets must be configured as a complete set/)
+  assert.match(workflow, /XOS_ANDROID_KEYSTORE_PATH/)
+  assert.match(workflow, /-validity 30/)
+})

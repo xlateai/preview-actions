@@ -43,6 +43,10 @@ on:
       APPLE_TEAM_ID: { required: false }
       IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64: { required: false }
       IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: { required: false }
+      ANDROID_KEYSTORE_BASE64: { required: false }
+      ANDROID_KEY_ALIAS: { required: false }
+      ANDROID_STORE_PASSWORD: { required: false }
+      ANDROID_KEY_PASSWORD: { required: false }
 
 permissions:
   contents: read
@@ -432,6 +436,45 @@ jobs:
 
       - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with: { distribution: temurin, java-version: "17" }
+
+      - name: Configure Android preview signing
+        env:
+          CONNECTED_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          CONNECTED_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          CONNECTED_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          CONNECTED_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keystore="$RUNNER_TEMP/xlate-preview-android.p12"
+          configured=0
+          for value in "$CONNECTED_KEYSTORE" "$CONNECTED_ALIAS" "$CONNECTED_STORE_PASSWORD" "$CONNECTED_KEY_PASSWORD"; do
+            [[ -n "$value" ]] && configured=$((configured + 1))
+          done
+          if [[ "$configured" == 4 ]]; then
+            printf '%s' "$CONNECTED_KEYSTORE" | base64 --decode > "$keystore"
+            alias="$CONNECTED_ALIAS"
+            store_password="$CONNECTED_STORE_PASSWORD"
+            key_password="$CONNECTED_KEY_PASSWORD"
+          elif [[ "$configured" == 0 ]]; then
+            alias=xlate-preview
+            store_password="$(openssl rand -hex 24)"
+            key_password="$store_password"
+            keytool -genkeypair -noprompt -storetype PKCS12 -keystore "$keystore" \
+              -storepass "$store_password" -keypass "$key_password" -alias "$alias" \
+              -keyalg RSA -keysize 3072 -validity 30 -dname 'CN=Xlate Ephemeral Preview,O=Xlate'
+          else
+            echo '::error::Android signing secrets must be configured as a complete set'
+            exit 1
+          fi
+          chmod 600 "$keystore"
+          echo "::add-mask::$store_password"
+          echo "::add-mask::$key_password"
+          {
+            echo "XOS_ANDROID_KEYSTORE_PATH=$keystore"
+            echo "XOS_ANDROID_KEY_ALIAS=$alias"
+            echo "XOS_ANDROID_STORE_PASSWORD=$store_password"
+            echo "XOS_ANDROID_KEY_PASSWORD=$key_password"
+          } >> "$GITHUB_ENV"
 
       - name: Check out application source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
