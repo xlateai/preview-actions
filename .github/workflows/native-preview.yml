@@ -185,6 +185,24 @@ jobs:
             exit 1
           fi
 
+      - name: Prepare application-native iOS dependencies
+        env: { PROJECT_PATH: "${{ inputs.project-path }}" }
+        run: |
+          set -euo pipefail
+          cd ".xlate-project/$PROJECT_PATH"
+          if ! node -e 'const p=require("./package.json"); process.exit(p.scripts?.["xlate:prepare:ios"] ? 0 : 1)'; then
+            echo 'No xlate:prepare:ios package script; continuing without app-specific preparation'
+          elif [[ -f package-lock.json ]]; then
+            npm run xlate:prepare:ios
+          elif [[ -f pnpm-lock.yaml ]]; then
+            corepack pnpm run xlate:prepare:ios
+          elif [[ -f yarn.lock ]]; then
+            corepack yarn run xlate:prepare:ios
+          else
+            echo '::error::A supported lockfile is required for xlate:prepare:ios'
+            exit 1
+          fi
+
       - name: Resolve the application's Apple team
         run: python3 .xlate-preview-actions/scripts/resolve-preview-apple-team.py
 
