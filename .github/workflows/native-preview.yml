@@ -248,14 +248,8 @@ jobs:
             --host "$BUILD_HOST" --title "$XOS_PREVIEW_TITLE" \
             --changed "$XOS_PREVIEW_WHAT_CHANGED" --test "$XOS_PREVIEW_WHAT_TO_TEST" --json \
             | tee "$RUNNER_TEMP/build.ndjson"
-          tail -n 1 "$RUNNER_TEMP/build.ndjson" > "$output"
-          python3 - "$output" <<'PY'
-          import json, sys
-          with open(sys.argv[1], encoding='utf-8') as handle:
-              url = json.load(handle).get('page_url', '')
-          if not url.startswith('https://builds.xlate.ai/'):
-              raise SystemExit('preview result omitted an approved builds.xlate.ai URL')
-          PY
+          python3 .xlate-preview-actions/scripts/extract-preview-result.py \
+            "$RUNNER_TEMP/build.ndjson" "$output"
 
       - name: Retain unsigned input after a failed handoff
         if: failure()
@@ -520,14 +514,8 @@ jobs:
             --host "$BUILD_HOST" --title "$XOS_PREVIEW_TITLE" \
             --changed "$XOS_PREVIEW_WHAT_CHANGED" --test "$XOS_PREVIEW_WHAT_TO_TEST" --json \
             | tee "$RUNNER_TEMP/build-android.ndjson"
-          tail -n 1 "$RUNNER_TEMP/build-android.ndjson" > "$output"
-          python3 - "$output" <<'PY'
-          import json, sys
-          with open(sys.argv[1], encoding='utf-8') as handle:
-              url = json.load(handle).get('page_url', '')
-          if not url.startswith('https://builds.xlate.ai/'):
-              raise SystemExit('preview result omitted an approved builds.xlate.ai URL')
-          PY
+          python3 .xlate-preview-actions/scripts/extract-preview-result.py \
+            "$RUNNER_TEMP/build-android.ndjson" "$output"
 
       - name: Upload preview result
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
