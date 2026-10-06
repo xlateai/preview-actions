@@ -32,3 +32,11 @@ test('iOS previews can consume a protected App Store Connect key identifier', ()
   const fallbacks = workflow.match(/inputs\.app-store-connect-api-key-id \|\| secrets\.APP_STORE_CONNECT_API_KEY_ID/g) ?? []
   assert.equal(fallbacks.length, 4)
 })
+
+test('iOS previews run an optional app-owned native preparation hook', () => {
+  assert.match(workflow, /Prepare application-native iOS dependencies/)
+  assert.match(workflow, /p\.scripts\?\.\["xlate:prepare:ios"\]/)
+  assert.match(workflow, /npm run xlate:prepare:ios/)
+  assert.match(workflow, /corepack pnpm run xlate:prepare:ios/)
+  assert.match(workflow, /corepack yarn run xlate:prepare:ios/)
+})
