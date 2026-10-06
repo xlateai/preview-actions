@@ -8,8 +8,8 @@ runs:
       id: cli-cache
       uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
       with:
-        path: ${{ runner.temp }}/xlate-preview-cli/665e936c0ddc4f54928eaae0be9de0dd26c212eb
-        key: xlate-preview-cli-v1-${{ runner.os }}-${{ runner.arch }}-665e936c0ddc4f54928eaae0be9de0dd26c212eb
+        path: ${{ runner.temp }}/xlate-preview-cli/db974c2f42f7605a50569599933fada269b5d30d
+        key: xlate-preview-cli-v1-${{ runner.os }}-${{ runner.arch }}-db974c2f42f7605a50569599933fada269b5d30d
 
     - name: Fetch pinned Preview Core
       if: steps.cli-cache.outputs.cache-hit != 'true'
@@ -17,7 +17,7 @@ runs:
       run: |
         set -euo pipefail
         bash "${{ github.action_path }}/../../../scripts/fetch-preview-core.sh" \
-          665e936c0ddc4f54928eaae0be9de0dd26c212eb \
+          db974c2f42f7605a50569599933fada269b5d30d \
           "$RUNNER_TEMP/devlate-preview-cli"
 
     - name: Build pinned Xlate CLI
@@ -25,7 +25,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        cli_dir="$RUNNER_TEMP/xlate-preview-cli/665e936c0ddc4f54928eaae0be9de0dd26c212eb"
+        cli_dir="$RUNNER_TEMP/xlate-preview-cli/db974c2f42f7605a50569599933fada269b5d30d"
         CARGO_TARGET_DIR="$RUNNER_TEMP/xlate-preview-target" \
           cargo build --locked --offline --release \
             --manifest-path "$RUNNER_TEMP/devlate-preview-cli/crates/xlate-preview-cli/Cargo.toml"
@@ -37,14 +37,14 @@ runs:
       if: steps.cli-cache.outputs.cache-hit != 'true'
       uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
       with:
-        path: ${{ runner.temp }}/xlate-preview-cli/665e936c0ddc4f54928eaae0be9de0dd26c212eb
-        key: xlate-preview-cli-v1-${{ runner.os }}-${{ runner.arch }}-665e936c0ddc4f54928eaae0be9de0dd26c212eb
+        path: ${{ runner.temp }}/xlate-preview-cli/db974c2f42f7605a50569599933fada269b5d30d
+        key: xlate-preview-cli-v1-${{ runner.os }}-${{ runner.arch }}-db974c2f42f7605a50569599933fada269b5d30d
 
     - name: Expose pinned Xlate CLI
       shell: bash
       run: |
         set -euo pipefail
-        cli_dir="$RUNNER_TEMP/xlate-preview-cli/665e936c0ddc4f54928eaae0be9de0dd26c212eb"
+        cli_dir="$RUNNER_TEMP/xlate-preview-cli/db974c2f42f7605a50569599933fada269b5d30d"
         test -x "$cli_dir/xlate"
         "$cli_dir/xlate" --version
         echo "$cli_dir" >> "$GITHUB_PATH"
