@@ -27,3 +27,8 @@ test('android previews use connected signing or a bounded ephemeral fallback', (
   assert.match(workflow, /XOS_ANDROID_KEYSTORE_PATH/)
   assert.match(workflow, /-validity 30/)
 })
+
+test('iOS previews can consume a protected App Store Connect key identifier', () => {
+  const fallbacks = workflow.match(/inputs\.app-store-connect-api-key-id \|\| secrets\.APP_STORE_CONNECT_API_KEY_ID/g) ?? []
+  assert.equal(fallbacks.length, 4)
+})

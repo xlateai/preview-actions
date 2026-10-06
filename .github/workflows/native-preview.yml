@@ -71,7 +71,7 @@ jobs:
         env:
           ADAPTER: ${{ inputs.project-adapter }}
           APPLICATION_IDENTIFIER: ${{ inputs.application-identifier }}
-          APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.app-store-connect-api-key-id }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.app-store-connect-api-key-id || secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APPLE_TEAM_ID: ${{ inputs.apple-team-id }}
           COMMAND: ${{ inputs.command-subject }}
           PROJECT_PATH: ${{ inputs.project-path }}
@@ -190,13 +190,13 @@ jobs:
 
       - name: Configure ephemeral iOS signing
         env:
-          APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.app-store-connect-api-key-id }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.app-store-connect-api-key-id || secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
           APPLE_TEAM_ID: ${{ inputs.apple-team-id }}
           IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
           IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
-          ASC_KEY_PATH: ${{ runner.temp }}/AuthKey_${{ inputs.app-store-connect-api-key-id }}.p8
+          ASC_KEY_PATH: ${{ runner.temp }}/AuthKey_${{ inputs.app-store-connect-api-key-id || secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
           P12_PATH: ${{ runner.temp }}/xlate-preview-distribution.p12
           KEYCHAIN_PATH: ${{ runner.temp }}/xlate-preview.keychain-db
         run: |
@@ -228,7 +228,7 @@ jobs:
 
       - name: Compile, sign, and publish iOS build
         env:
-          APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.app-store-connect-api-key-id }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.app-store-connect-api-key-id || secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APPLE_TEAM_ID: ${{ inputs.apple-team-id }}
           GH_TOKEN: ${{ github.token }}
