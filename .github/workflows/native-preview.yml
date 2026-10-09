@@ -402,8 +402,8 @@ jobs:
             xlate preview sign ./ --platform ios --build "${{ inputs.signing-build-id }}" \
               --host "${{ inputs.build-host }}" --json | tee "$output"
           fi
-          page_url="$(python3 -c 'import json,sys; print(json.loads(open(sys.argv[1]).read().splitlines()[-1])["page_url"])' "$output")"
-          [[ "$page_url" == https://builds.xlate.ai/* ]]
+          python3 .xlate-preview-actions/scripts/extract-preview-result.py \
+            "$output" "$RUNNER_TEMP/xlate-preview-result-ios.json"
 
       - name: Remove ephemeral signing material
         if: always()

@@ -26,8 +26,20 @@ test('extracts a preview result concatenated after a GitHub API response', () =>
 })
 
 test('rejects lookalike and non-HTTPS build hosts', () => {
-  for (const url of ['https://builds.xlate.ai.example.com/p/1', 'http://builds.xlate.ai/p/1']) {
+  for (const url of ['https://builds.xlate.ai.example.com/p/1', 'http://builds.xlate.ai/p/1',
+    'https://xlate.ai.example.com/apps/previews/build_123', 'https://xlate.ai/apps/settings',
+    'https://user@xlate.ai/apps/previews/build_123', 'https://xlate.ai:8443/apps/previews/build_123',
+    'https://builds.xlate.ai/session']) {
     const { run } = extract(JSON.stringify({ page_url: url }))
     assert.notEqual(run.status, 0)
+  }
+})
+
+test('accepts integrated build and preview pages during the host migration', () => {
+  for (const id of ['preview_abcdefghijklmnop', 'build_abcdefghijklmnop']) {
+    const page_url = `https://xlate.ai/apps/previews/${id}`
+    const { run, result } = extract(JSON.stringify({ id, page_url }))
+    assert.equal(run.status, 0, run.stderr)
+    assert.equal(result.page_url, page_url)
   }
 })
