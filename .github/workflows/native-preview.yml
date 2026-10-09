@@ -71,7 +71,7 @@ jobs:
         env:
           ADAPTER: ${{ inputs.project-adapter }}
           APPLICATION_IDENTIFIER: ${{ inputs.application-identifier }}
-          APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.app-store-connect-api-key-id || secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.app-store-connect-api-key-id || vars.APP_STORE_CONNECT_API_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APPLE_TEAM_ID: ${{ inputs.apple-team-id }}
           COMMAND: ${{ inputs.command-subject }}
           PROJECT_PATH: ${{ inputs.project-path }}
@@ -107,13 +107,11 @@ jobs:
             exit 1
           fi
           if [[ -n "$PREPARATION_ID" ]]; then
-            [[ "$PREPARATION_ID" =~ ^prep_[A-Za-z0-9_-]{16,120}$ ]] || { echo '::error::device preparation identity is invalid'; exit 1; }
+            [[ "$PREPARATION_ID" =~ ^(prepare|prep)_[A-Za-z0-9_-]{16,193}$ ]] || { echo '::error::device preparation identity is invalid'; exit 1; }
             [[ "$REISSUE_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo '::error::reissue source must be an exact commit'; exit 1; }
           fi
           if [[ "$COMMAND" == /preview || "$COMMAND" == '/preview(ios)' ]]; then
             [[ "$BUILD_SIGNING_ENVIRONMENT" =~ ^xos-preview-[A-Za-z0-9_-]{8,120}$ ]] || { echo '::error::An approved build-signing-environment is required for iOS'; exit 1; }
-            [[ "$APP_STORE_CONNECT_API_KEY_ID" =~ ^[A-Z0-9]{10}$ ]] || { echo '::error::App Store Connect key ID is invalid'; exit 1; }
-            [[ "$APPLE_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || { echo '::error::Apple team ID is invalid'; exit 1; }
             echo 'run-ios=true' >> "$GITHUB_OUTPUT"
           else
             echo 'run-ios=false' >> "$GITHUB_OUTPUT"
@@ -208,17 +206,19 @@ jobs:
 
       - name: Configure ephemeral iOS signing
         env:
-          APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.app-store-connect-api-key-id || secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.app-store-connect-api-key-id || vars.APP_STORE_CONNECT_API_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
           APPLE_TEAM_ID: ${{ inputs.apple-team-id }}
           IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64 }}
           IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
-          ASC_KEY_PATH: ${{ runner.temp }}/AuthKey_${{ inputs.app-store-connect-api-key-id || secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
+          ASC_KEY_PATH: ${{ runner.temp }}/AuthKey_${{ inputs.app-store-connect-api-key-id || vars.APP_STORE_CONNECT_API_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}.p8
           P12_PATH: ${{ runner.temp }}/xlate-preview-distribution.p12
           KEYCHAIN_PATH: ${{ runner.temp }}/xlate-preview.keychain-db
         run: |
           set -euo pipefail
+          APPLE_TEAM_ID="${APPLE_TEAM_ID:-$XOS_PREVIEW_EXPECTED_APPLE_TEAM_ID}"
+          [[ "$APP_STORE_CONNECT_API_KEY_ID" =~ ^[A-Z0-9]{10}$ ]] || { echo '::error::App Store Connect key ID is invalid'; exit 1; }
           for name in APP_STORE_CONNECT_API_KEY_ID APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_API_KEY APPLE_TEAM_ID; do
             [[ -n "${!name:-}" ]] || { echo "::error::$name is required for iOS previews"; exit 1; }
           done
@@ -226,6 +226,7 @@ jobs:
             echo '::error::Configured Apple team does not match the control-plane binding'
             exit 1
           }
+          echo "APPLE_TEAM_ID=$APPLE_TEAM_ID" >> "$GITHUB_ENV"
           printf '%s' "$APP_STORE_CONNECT_API_KEY" | sed 's/\\n/\n/g' > "$ASC_KEY_PATH"
           chmod 600 "$ASC_KEY_PATH"
           if [[ -n "${IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64:-}" ]]; then
@@ -246,7 +247,7 @@ jobs:
 
       - name: Compile, sign, and publish iOS build
         env:
-          APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.app-store-connect-api-key-id || secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.app-store-connect-api-key-id || vars.APP_STORE_CONNECT_API_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APPLE_TEAM_ID: ${{ inputs.apple-team-id }}
           GH_TOKEN: ${{ github.token }}
@@ -361,6 +362,8 @@ jobs:
           KEYCHAIN_PATH: ${{ runner.temp }}/xlate-preview.keychain-db
         run: |
           set -euo pipefail
+          APPLE_TEAM_ID="${APPLE_TEAM_ID:-$XOS_PREVIEW_EXPECTED_APPLE_TEAM_ID}"
+          [[ "$APP_STORE_CONNECT_API_KEY_ID" =~ ^[A-Z0-9]{10}$ ]] || { echo '::error::App Store Connect key ID is invalid'; exit 1; }
           for name in APP_STORE_CONNECT_API_KEY_ID APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_API_KEY APPLE_TEAM_ID; do
             [[ -n "${!name:-}" ]] || { echo "::error::$name is required for iOS previews"; exit 1; }
           done
@@ -368,6 +371,7 @@ jobs:
             echo '::error::Configured Apple team does not match the control-plane binding'
             exit 1
           }
+          echo "APPLE_TEAM_ID=$APPLE_TEAM_ID" >> "$GITHUB_ENV"
           printf '%s' "$APP_STORE_CONNECT_API_KEY" | sed 's/\\n/\n/g' > "$ASC_KEY_PATH"
           chmod 600 "$ASC_KEY_PATH"
           if [[ -n "${IOS_DISTRIBUTION_CERTIFICATE_P12_BASE64:-}" ]]; then
