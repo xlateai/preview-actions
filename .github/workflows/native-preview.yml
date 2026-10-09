@@ -428,7 +428,20 @@ jobs:
       run: { shell: bash }
     env:
       XOS_PREVIEW_APPLICATION_IDENTIFIER: ${{ inputs.application-identifier }}
+      GRADLE_OPTS: '-Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" -Dorg.gradle.workers.max=2'
     steps:
+      - name: Reserve disk for native Android compilation
+        run: |
+          set -euo pipefail
+          # These unrelated toolchains are disposable on this GitHub-hosted
+          # Android-only VM. Preserve the Android SDK, Java, Node and Rust.
+          sudo rm -rf -- /usr/share/dotnet /usr/local/swift /opt/ghc /usr/local/.ghcup /usr/local/lib/android/sdk/system-images
+          df -h "$RUNNER_TEMP"
+          available_kib="$(df -Pk "$RUNNER_TEMP" | awk 'NR==2 {print $4}')"
+          if (( available_kib < 18 * 1024 * 1024 )); then
+            echo '::error::Native Android compilation requires at least 18 GiB free disk; use a larger runner.'
+            exit 1
+          fi
       - name: Check out pinned public runner
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -32,6 +32,8 @@ runs:
         mkdir -p "$cli_dir"
         cp "$RUNNER_TEMP/xlate-preview-target/release/xlate" "$cli_dir/xlate"
         chmod 755 "$cli_dir/xlate"
+        # Keep the executable cache, not the throwaway Rust compilation tree.
+        rm -rf -- "$RUNNER_TEMP/xlate-preview-target" "$RUNNER_TEMP/devlate-preview-cli"
 
     - name: Save pinned Xlate CLI
       if: steps.cli-cache.outputs.cache-hit != 'true'
