@@ -249,7 +249,6 @@ jobs:
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ inputs.app-store-connect-api-key-id || vars.APP_STORE_CONNECT_API_KEY_ID || secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          APPLE_TEAM_ID: ${{ inputs.apple-team-id }}
           GH_TOKEN: ${{ github.token }}
           PROJECT_PATH: ${{ inputs.project-path }}
           BUILD_HOST: ${{ inputs.build-host }}
