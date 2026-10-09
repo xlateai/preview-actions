@@ -17,7 +17,8 @@ test('android-only requests do not require Apple signing inputs', () => {
   const androidValidation = workflow.indexOf(`if [[ "$COMMAND" == /preview || "$COMMAND" == '/preview(android)' ]]`)
   assert.ok(appleValidation > 0)
   assert.ok(androidValidation > appleValidation)
-  assert.match(workflow.slice(appleValidation, androidValidation), /APP_STORE_CONNECT_API_KEY_ID/)
+  assert.match(workflow.slice(appleValidation, androidValidation), /BUILD_SIGNING_ENVIRONMENT/)
+  assert.doesNotMatch(workflow.slice(appleValidation, androidValidation), /key ID is invalid/)
   assert.doesNotMatch(workflow.slice(androidValidation, workflow.indexOf('react-native-build:', androidValidation)), /APP_STORE_CONNECT_API_KEY_ID/)
 })
 
@@ -29,7 +30,7 @@ test('android previews use connected signing or a bounded ephemeral fallback', (
 })
 
 test('iOS previews can consume a protected App Store Connect key identifier', () => {
-  const fallbacks = workflow.match(/inputs\.app-store-connect-api-key-id \|\| secrets\.APP_STORE_CONNECT_API_KEY_ID/g) ?? []
+  const fallbacks = workflow.match(/inputs\.app-store-connect-api-key-id \|\| vars\.APP_STORE_CONNECT_API_KEY_ID \|\| secrets\.APP_STORE_CONNECT_API_KEY_ID/g) ?? []
   assert.equal(fallbacks.length, 4)
 })
 

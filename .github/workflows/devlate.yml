@@ -1,0 +1,95 @@
+name: Devlate distributions
+
+on:
+  workflow_call:
+    inputs:
+      project-path: { type: string, default: '.', required: false }
+      platforms: { type: string, default: auto, required: false }
+      signing-environment: { type: string, default: '', required: false }
+      apple-team-id: { type: string, default: '', required: false }
+
+permissions:
+  contents: read
+  actions: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  prepare:
+    name: Resolve application and exact source
+    runs-on: ubuntu-latest
+    outputs:
+      config: ${{ steps.config.outputs.config }}
+      revision: ${{ steps.runner.outputs.revision }}
+    steps:
+      - name: Require explicit source dispatch
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT_NAME" != workflow_dispatch ]]; then
+            echo '::error::Use Run workflow (or devlate preview) on the application branch. Native signing requires an explicit source dispatch.'
+            exit 1
+          fi
+      - name: Resolve this immutable Devlate release
+        id: runner
+        shell: python
+        run: |
+          import base64, json, os, re, urllib.request
+          from urllib.parse import urlencode
+          url = os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']
+          req = urllib.request.Request(url + ('&' if '?' in url else '?') + urlencode({'audience':'https://xlate.ai/devlate-release'}), headers={'Authorization':'bearer ' + os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})
+          with urllib.request.urlopen(req, timeout=30) as response:
+            token = json.load(response)['value']
+          encoded = token.split('.')[1]
+          claims = json.loads(base64.urlsafe_b64decode(encoded + '=' * (-len(encoded) % 4)))
+          revision = claims.get('job_workflow_sha','')
+          if not re.fullmatch('[a-f0-9]{40}', revision) or claims.get('job_workflow_ref') != 'xlateai/preview-actions/.github/workflows/devlate.yml@' + revision:
+            raise SystemExit('Devlate must be imported at one immutable commit SHA')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output:
+            output.write('revision=' + revision + '\n')
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: xlateai/preview-actions
+          ref: ${{ steps.runner.outputs.revision }}
+          path: .devlate
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: .xlate-project
+          persist-credentials: false
+      - name: Read application preview configuration
+        id: config
+        env:
+          PROJECT_PATH: ${{ inputs.project-path }}
+          PLATFORMS: ${{ inputs.platforms }}
+          SIGNING_ENVIRONMENT: ${{ inputs.signing-environment || vars.XLATE_SIGNING_ENVIRONMENT }}
+          APPLE_TEAM_ID: ${{ inputs.apple-team-id || vars.APPLE_TEAM_ID }}
+        run: node .devlate/scripts/distribution-request.mjs
+
+  distribute:
+    name: Build, sign, and publish
+    needs: prepare
+    uses: ./.github/workflows/native-preview.yml
+    secrets: inherit
+    with:
+      project-name: ${{ fromJSON(needs.prepare.outputs.config).project }}
+      project-path: ${{ fromJSON(needs.prepare.outputs.config).path }}
+      project-adapter: react_native
+      application-identifier: ${{ fromJSON(needs.prepare.outputs.config).identifier }}
+      actions-ref: ${{ needs.prepare.outputs.revision }}
+      # Internal compatibility pin; application workflows have only one import.
+      xos-ref: ce6afee5495c3128e44ce5558ac60b0bb805034d
+      command-subject: ${{ fromJSON(needs.prepare.outputs.config).command }}
+      pull-request-number: ${{ fromJSON(needs.prepare.outputs.config).pr }}
+      preview-request-id: ${{ fromJSON(needs.prepare.outputs.config).requestId }}
+      preview-title: ${{ fromJSON(needs.prepare.outputs.config).title }}
+      preview-what-changed: ${{ fromJSON(needs.prepare.outputs.config).changed }}
+      preview-what-to-test: ${{ fromJSON(needs.prepare.outputs.config).test }}
+      build-signing-environment: ${{ fromJSON(needs.prepare.outputs.config).environment }}
+      apple-team-id: ${{ fromJSON(needs.prepare.outputs.config).appleTeam }}
+      signing-build-id: ${{ fromJSON(needs.prepare.outputs.config).signingBuild }}
+      signing-platform: ${{ fromJSON(needs.prepare.outputs.config).signingBuild && 'ios' || '' }}
+      signing-application-identifier: ${{ fromJSON(needs.prepare.outputs.config).signingBuild && fromJSON(needs.prepare.outputs.config).identifier || '' }}
+      signing-environment: ${{ fromJSON(needs.prepare.outputs.config).signingBuild && fromJSON(needs.prepare.outputs.config).environment || '' }}
+      device-preparation-id: ${{ fromJSON(needs.prepare.outputs.config).preparation }}
+      reissue-source-sha: ${{ fromJSON(needs.prepare.outputs.config).source }}
