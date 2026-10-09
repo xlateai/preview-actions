@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Extract the final builds.xlate.ai result from mixed CLI output."""
+"""Extract the final approved Xlate preview result from mixed CLI output."""
 
 import json
+import re
 import sys
 from pathlib import Path
 from urllib.parse import urlparse
@@ -38,11 +39,13 @@ def main() -> None:
         if not isinstance(page_url, str):
             continue
         parsed = urlparse(page_url)
-        if parsed.scheme == "https" and parsed.hostname == "builds.xlate.ai":
+        legacy = parsed.netloc == "builds.xlate.ai" and re.fullmatch(r"/(?:previews|builds)/(?:preview|build)_[A-Za-z0-9_-]+", parsed.path)
+        integrated = parsed.netloc == "xlate.ai" and re.fullmatch(r"/apps/previews/(?:preview|build)_[A-Za-z0-9_-]+", parsed.path)
+        if parsed.scheme == "https" and (legacy or integrated):
             candidates.append(value)
 
     if not candidates:
-        raise SystemExit("preview result omitted an approved builds.xlate.ai URL")
+        raise SystemExit("preview result omitted an approved Xlate preview URL")
 
     Path(sys.argv[2]).write_text(
         json.dumps(candidates[-1], separators=(",", ":")) + "\n",
