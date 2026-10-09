@@ -7,7 +7,7 @@ if (( $# != 2 )) || [[ ! "$1" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 origin="${XOS_PREVIEW_CORE_TOKEN_ORIGIN:-https://xlate.ai}"
 if [[ ! "$origin" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?/?$ ]]; then
-  echo '::error::XOS Cloud origin must be an HTTPS origin without a path' >&2
+  echo '::error::Xlate Cloud origin must be an HTTPS origin without a path' >&2
   exit 1
 fi
 if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" || -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]]; then
