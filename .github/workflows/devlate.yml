@@ -56,6 +56,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           path: .xlate-project
+          # Device re-signing reads the original app configuration, even before
+          # that app branch has been merged into the default branch.
+          ref: ${{ fromJSON(github.event.inputs.request || '{}').signing_build_id && fromJSON(github.event.inputs.request || '{}').source_sha || github.sha }}
           persist-credentials: false
       - name: Read application preview configuration
         id: config

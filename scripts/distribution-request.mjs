@@ -26,6 +26,7 @@ export function resolveRequest({ event, projectPath = '.', platforms = 'auto', r
   }
   const signingBuild = text('signing_build_id'), preparation = text('preparation_id'), source = text('source_sha')
   if (signingBuild && !/^build_[A-Za-z0-9_-]{16,193}$/.test(signingBuild)) throw Error('Invalid signing build')
+  if (signingBuild && (!/^[a-f0-9]{40}$/.test(source) || !selected.includes('ios'))) throw Error('Signing requires the original iOS source commit')
   if (preparation && (!signingBuild || !/^(?:prepare|prep)_[A-Za-z0-9_-]{16,193}$/.test(preparation) || !/^[a-f0-9]{40}$/.test(source))) throw Error('Invalid device preparation')
   if (request.application_identifier && request.application_identifier !== identifier) throw Error('Signing application does not match project configuration')
   const environment = text('signing_environment', signingEnvironment)
